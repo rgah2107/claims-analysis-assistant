@@ -52,7 +52,7 @@ With a hashing embedder there is always a nearest neighbor, even when the claim 
 
 A later letter can change a clause. The evaluation corpus does this: the policy says 2,000 EUR for water damage and the endorsement of 15/06/2024 says 5,000 EUR.
 
-The system does not choose in silence. When the question is about that clause, the summary includes `contradictions` with both figures, the file, and the date. The answer adds that, operationally, the later-dated document prevails, and both citations stay on screen. The UI shows a warning only for that question. A question about the insured person can retrieve both files, because both name the policy, and it does not show the limit warning. The deductible is not a conflict because the endorsement says it does not change and does not state a second figure.
+The system does not choose in silence. When the question is about that clause, the summary includes `contradictions` with both figures, the file, and the date, and both citations stay on screen. The UI shows a warning only for that question. The prose depends on what was asked. "What is the limit" leads with the later amount and says that document prevails. "What was the original limit" leads with the earlier amount and says the endorsement changed it. A question about the insured person can retrieve both files, because both name the policy, and it does not show the limit warning. The deductible is not a conflict because the endorsement says it does not change and does not state a second figure.
 
 ## Uploading a document again
 

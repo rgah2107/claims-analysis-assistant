@@ -77,7 +77,15 @@ def question_from_prompt(prompt: str) -> str:
 
 
 def extractive_answer(question: str, blocks: list[SourceBlock]) -> str:
-    """Quote sentences that cover the question and note a limit conflict when one exists."""
+    """Quote sentences that cover the question and note a limit conflict when one exists.
+
+    A question about the current limit and a question about the original limit
+    must not return the same paragraph. The current question leads with the
+    later amount. The original question leads with the earlier amount.
+    """
+    distinguished = _distinguished_limit_answer(question, blocks)
+    if distinguished:
+        return distinguished
     ranked = _ranked_sentences(question, blocks)
     if not ranked:
         return "I cannot answer from the documents on this claim."
@@ -110,7 +118,7 @@ def summary_payload(question: str, blocks: list[SourceBlock], *, abstained: bool
 
 
 def contradiction_note(blocks: list[SourceBlock]) -> str | None:
-    """Spanish sentence naming both limits and which document is later."""
+    """Sentence naming both limits and which document is later."""
     found = _amounts_for(blocks, LIMIT_RE)
     unique = list(dict.fromkeys(amount for _block, amount in found))
     if len(unique) < 2:
@@ -164,6 +172,9 @@ def contradiction_payload(blocks: list[SourceBlock]) -> list[dict]:
 
 def _coverage_sentence(question: str, blocks: list[SourceBlock], contradictions: list[dict]) -> str | None:
     """The sentence the summary calls the applicable coverage."""
+    lead = _limit_lead_sentence(question, blocks)
+    if lead:
+        return lead
     if contradictions and _question_is_about_limit(question):
         return contradiction_note(blocks)
     ranked = _ranked_sentences(question, blocks)
@@ -271,6 +282,75 @@ def _dates(blocks: list[SourceBlock]) -> list[str]:
 def _sentences(text: str) -> list[str]:
     """Split on punctuation or newlines and drop empty pieces."""
     return [part.strip() for part in SENTENCE_RE.split(text) if part.strip()]
+
+
+EARLIER_RE = re.compile(r"\b(original|before|previous|prior|earlier)\b", re.IGNORECASE)
+
+
+def _distinguished_limit_answer(question: str, blocks: list[SourceBlock]) -> str | None:
+    """Different prose for the operative limit and for the amount it replaced."""
+    sides = _limit_sides(blocks)
+    if sides is None or not _question_names_the_limit(question):
+        return None
+    earlier_block, earlier_amount, earlier_sentence, later_block, later_amount, later_sentence = sides
+    if EARLIER_RE.search(question):
+        return (
+            f"{earlier_sentence} "
+            f"That is the original limit, in {earlier_block.filename} "
+            f"({earlier_block.date or 'undated'}), before {later_block.filename} "
+            f"({later_block.date or 'undated'}) changed it to {later_amount} EUR."
+        )
+    note = contradiction_note(blocks)
+    return f"{later_sentence} {note}".strip()
+
+
+def _limit_lead_sentence(question: str, blocks: list[SourceBlock]) -> str | None:
+    """The one sentence that answers this limit question, without the conflict note."""
+    sides = _limit_sides(blocks)
+    if sides is None or not _question_names_the_limit(question):
+        return None
+    _earlier_block, _earlier_amount, earlier_sentence, _later_block, _later_amount, later_sentence = sides
+    if EARLIER_RE.search(question):
+        return earlier_sentence
+    return later_sentence
+
+
+def _limit_sides(
+    blocks: list[SourceBlock],
+) -> tuple[SourceBlock, str, str, SourceBlock, str, str] | None:
+    """Earlier and later euro limits, each with the sentence that states it."""
+    pairs = _first_of_each_amount(_amounts_for(blocks, LIMIT_RE))
+    if len(pairs) < 2:
+        return None
+    earlier_block, earlier_amount = min(pairs, key=lambda item: (item[0].date or "", item[1]))
+    later_block, later_amount = max(pairs, key=lambda item: (item[0].date or "", item[1]))
+    if earlier_amount == later_amount:
+        return None
+    earlier_sentence = _sentence_with_amount(earlier_block, earlier_amount)
+    later_sentence = _sentence_with_amount(later_block, later_amount)
+    if not earlier_sentence or not later_sentence:
+        return None
+    return (
+        earlier_block,
+        earlier_amount,
+        earlier_sentence,
+        later_block,
+        later_amount,
+        later_sentence,
+    )
+
+
+def _sentence_with_amount(block: SourceBlock, amount: str) -> str | None:
+    """The sentence in this block that states this euro amount as a limit."""
+    for sentence in _sentences(block.body):
+        if LIMIT_RE.search(sentence) and amount in AMOUNT_RE.findall(sentence):
+            return sentence.strip()
+    return None
+
+
+def _question_names_the_limit(question: str) -> bool:
+    """True when the question itself says limit or indemnity, not only water."""
+    return bool(significant_tokens(question) & {"limit", "indemnity"})
 
 
 def _question_is_about_limit(question: str) -> bool:

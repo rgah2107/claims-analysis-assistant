@@ -60,6 +60,49 @@ def test_conflicting_limits_are_both_reported_and_the_later_one_prevails() -> No
     assert payload["contradictions"][0]["statements"]
     assert "c1" in payload["contradictions"][0]["citation_chunk_ids"]
     assert "c2" in payload["contradictions"][0]["citation_chunk_ids"]
+    assert payload["applicable_coverage"].startswith("The indemnity limit is changed to 5000")
+
+
+def test_the_original_limit_is_not_the_same_answer_as_the_current_limit() -> None:
+    """'What was it before' leads with 2000. 'What is it now' leads with 5000."""
+    blocks = [
+        SourceBlock(
+            "c1",
+            "home-policy.pdf",
+            "2024-03-01",
+            "The indemnity limit for water damage is 2000 EUR per claim.",
+        ),
+        SourceBlock(
+            "c2",
+            "endorsement-clause-4.docx",
+            "2024-06-15",
+            "The indemnity limit for water damage is changed to 5000 EUR per claim.",
+        ),
+    ]
+    current = extractive_answer("What is the indemnity limit for water damage", blocks)
+    original = extractive_answer(
+        "What was the original water damage limit before the endorsement", blocks
+    )
+    assert current != original
+    assert current.startswith("The indemnity limit for water damage is changed to 5000")
+    assert "prevails" in current
+    assert original.startswith("The indemnity limit for water damage is 2000")
+    assert "original limit" in original
+    assert "changed it to 5000" in original
+    assert "prevails" not in original
+    original_summary = summary_payload(
+        "What was the original water damage limit before the endorsement", blocks, abstained=False
+    )
+    current_summary = summary_payload(
+        "What is the indemnity limit for water damage", blocks, abstained=False
+    )
+    assert original_summary["contradictions"]
+    assert original_summary["applicable_coverage"].startswith(
+        "The indemnity limit for water damage is 2000"
+    )
+    assert current_summary["applicable_coverage"].startswith(
+        "The indemnity limit for water damage is changed to 5000"
+    )
 
 
 def test_an_unrelated_question_does_not_surface_the_limit_conflict() -> None:
