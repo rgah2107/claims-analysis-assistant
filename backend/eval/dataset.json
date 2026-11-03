@@ -1,0 +1,96 @@
+{
+  "claim_number": "SIN-EVAL",
+  "documents": [
+    {"filename": "home-policy.pdf", "kind": "policy"},
+    {"filename": "endorsement-clause-4.docx", "kind": "letter"}
+  ],
+  "questions": [
+    {
+      "id": "policy-number",
+      "question": "What is the policy number",
+      "expect_abstain": false,
+      "expected_substrings": ["POL-NS-2024-1187"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 1}]
+    },
+    {
+      "id": "insured",
+      "question": "Who is the insured person",
+      "expect_abstain": false,
+      "expected_substrings": ["Ana Ruiz"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 1}]
+    },
+    {
+      "id": "term",
+      "question": "What is the policy term",
+      "expect_abstain": false,
+      "expected_substrings": ["01/03/2024"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 1}]
+    },
+    {
+      "id": "limit",
+      "question": "What is the indemnity limit for water damage",
+      "expect_abstain": false,
+      "expected_substrings": ["2000", "5000", "prevails"],
+      "expected_sources": [
+        {"filename": "home-policy.pdf", "page": 1},
+        {"filename": "endorsement-clause-4.docx", "page": 1}
+      ]
+    },
+    {
+      "id": "original-limit",
+      "question": "What was the original water damage limit before the endorsement",
+      "expect_abstain": false,
+      "expected_substrings": ["2000"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 1}]
+    },
+    {
+      "id": "deductible",
+      "question": "What is the deductible for water damage",
+      "expect_abstain": false,
+      "expected_substrings": ["150"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 1}]
+    },
+    {
+      "id": "deductible-unchanged",
+      "question": "Does the deductible change with the endorsement",
+      "expect_abstain": false,
+      "expected_substrings": ["does not change"],
+      "expected_sources": [{"filename": "endorsement-clause-4.docx", "page": 1}]
+    },
+    {
+      "id": "exclusion",
+      "question": "What damage is excluded for lack of maintenance",
+      "expect_abstain": false,
+      "expected_substrings": ["lack of maintenance"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 2}]
+    },
+    {
+      "id": "notice",
+      "question": "How long does the insured have to report the claim",
+      "expect_abstain": false,
+      "expected_substrings": ["7 days"],
+      "expected_sources": [{"filename": "home-policy.pdf", "page": 2}]
+    },
+    {
+      "id": "endorsement-date",
+      "question": "What is the date of the endorsement",
+      "expect_abstain": false,
+      "expected_substrings": ["15/06/2024"],
+      "expected_sources": [{"filename": "endorsement-clause-4.docx", "page": 1}]
+    },
+    {
+      "id": "jewelry",
+      "question": "Does it cover jewelry theft at the airport",
+      "expect_abstain": true,
+      "expected_substrings": [],
+      "expected_sources": []
+    },
+    {
+      "id": "surveyor",
+      "question": "Who is the surveyor assigned to the fire",
+      "expect_abstain": true,
+      "expected_substrings": [],
+      "expected_sources": []
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+[project]
+name = "claims-analysis-assistant"
+version = "0.1.0"
+description = "RAG assistant for insurance claim documents, with async ingest and citations."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: starts a real PostgreSQL+pgvector database in Docker",
+]
+
+[tool.ruff]
+line-length = 112
+target-version = "py312"
+src = ["app", "tests", "eval"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

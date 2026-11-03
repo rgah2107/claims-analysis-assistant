@@ -1,0 +1,24 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+celery==5.4.0
+# kombu 5.7 raises VersionMismatch on redis-py 5 when the worker connects.
+# Tests use an in-memory broker, so this only fails in Compose if left unpinned.
+kombu==5.7.0
+redis==6.4.0
+pydantic==2.10.4
+pydantic-settings==2.7.0
+pypdf==5.1.0
+python-docx==1.1.2
+httpx==0.28.1
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-exporter-otlp-proto-http==1.29.0
+pytest==8.3.4
+ruff==0.8.4
+testcontainers[postgres]==4.9.0
+reportlab==4.2.5
