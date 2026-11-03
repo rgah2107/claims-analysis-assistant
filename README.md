@@ -12,8 +12,9 @@ The interview guide is [`docs/interview-prep.pdf`](docs/interview-prep.pdf). The
 - Celery + Redis pipeline: extraction, chunking with page and section, embeddings, and PostgreSQL with pgvector. The task is idempotent, retries with backoff, and publishes each document's status.
 - Hybrid search (vector + English full text) combined with Reciprocal Rank Fusion, always filtered by claim.
 - Questions over SSE, with real citations. An explicit refusal when the evidence is weak.
-- Language providers behind one interface: fake, Gemini, and an OpenAI-compatible endpoint. A 20 second timeout, and fallback only between real providers, only if the first one has not emitted text.
-- Pydantic summary. If it does not validate, one repair attempt and, if that also fails, an explicit error.
+- Language providers behind one interface. Chat is `fake`, `gemini`, `openai`, or `local`. Embeddings are `fake` or `gemini` and stay on the provider that indexed the claim. Fallback is only between real chat providers, and only before the first token. `fake` is never that fallback.
+- Gemini and OpenAI use a 20 second timeout. A local OpenAI-compatible server uses 180 seconds, because the first request can load the model.
+- Pydantic summary. If it does not validate, one repair attempt and, if that also fails, an explicit error. If the summary call itself fails after the prose has streamed, the card is filled from the retrieved chunks. Until that card arrives, the chat shows "Preparing the summary…".
 - React: upload, a list that shows errors, streaming chat, a clickable citation, and a useful / not useful vote.
 - A set of 12 questions, a Recall@5 and grounding script, pytest (including real PostgreSQL via Docker), and chat tests.
 - OpenTelemetry, JSON logs with a trace id, and masking of email, phone, and national-id numbers.
@@ -38,9 +39,18 @@ docker compose up --build
 - App: http://localhost:8080
 - API: http://localhost:8000/api/health
 
-Health should report `llm_provider: fake` and `embedding_provider: fake`. The example claim in the UI is `SIN-1001`. Upload a PDF that contains real text (not a scan) and ask once the document says "ready".
+With no `.env` file, health reports `llm_provider: fake` and `embedding_provider: fake`. The example claim in the UI is `SIN-1001`. Upload a PDF that contains real text (not a scan) and ask once the document says "ready".
 
-To use Gemini instead of the fake provider, export `GEMINI_API_KEY` and set `LLM_PROVIDER` and `EMBEDDING_PROVIDER` to `gemini` in `docker-compose.yml`. Chat uses `gemini-3.8-flash` (`gemini-2.0-flash` was shut down on 1 June 2026). Embeddings stay on `gemini-embedding-001`, which accepts 384 dimensions. Do not set the fake provider as the fallback of a real one: the vector spaces cannot be mixed. If you change the embedding model, delete the `pgdata` volume and reindex.
+Chat has four values for `LLM_PROVIDER`. Embeddings have two, and they must stay on the provider that wrote the index. Switching chat does not require `docker compose down -v`. Switching `EMBEDDING_PROVIDER` does, followed by uploading the documents again. Do not set `LLM_FALLBACK=fake`.
+
+| `LLM_PROVIDER` | What it calls | What to set |
+| --- | --- | --- |
+| `fake` | Deterministic extractive answers. No key. | Omit `.env`, or set this value and recreate the API. |
+| `gemini` | Gemini, default model `gemini-3.5-flash`. | Copy `.env.example` to `.env` and paste `GEMINI_API_KEY`. `EMBEDDING_PROVIDER=gemini` uses `gemini-embedding-001` at 384 dimensions. |
+| `openai` | `https://api.openai.com/v1`, default model `gpt-4o-mini`. | Set `OPENAI_API_KEY` and `LLM_PROVIDER=openai`. |
+| `local` | An OpenAI-compatible server on this machine, such as LM Studio Bionic. | Turn on Settings → Local Model API. Set `LOCAL_LLM_MODEL` to the id in Library, and set `LOCAL_LLM_BASE_URL` to `http://host.docker.internal:<port>/v1`. The port is the one in Bionic's Base URL. The container cannot use `localhost`. Leave the embedding provider unchanged. |
+
+`.env.example` lists the provider variables Compose passes into the API and the worker. After editing `.env`, recreate the API with `docker compose up -d api`.
 
 ## Tests
 

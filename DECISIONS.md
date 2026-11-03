@@ -62,15 +62,23 @@ Same name and different bytes: a new version. The previous one becomes `active =
 
 ## Structured summary
 
-`ClaimSummary` forbids extra fields. Confidence can only be `low`, `medium`, or `high`. If the JSON does not validate, a second attempt is made with the validation error and the same documents. If the second attempt also fails, the event is `schema_error`: text that was already emitted is not presented as a valid summary.
+`ClaimSummary` forbids extra fields. Confidence can only be `low`, `medium`, or `high`. If the JSON does not validate, a second attempt is made with the validation error and the same documents. If the second attempt also fails, the event is `schema_error`: text that was already emitted is not presented as a valid summary. If the summary request fails before any JSON arrives, and the prose has already streamed, the card is built from the same chunks instead of showing a provider error for that second call.
 
 In demo mode the "model" is extractive and the JSON comes from the chunks, but it goes through the same validation. When several sentences tie on overlap, a sentence is quoted only if it adds a question term the earlier quotes missed, up to three. That is why "what is the policy term" does not stop at the lines that only say "policy". Repair tests use a scripted provider, not the fake one, so they can force bad JSON.
 
 ## Providers
 
-The interface is `complete` and `stream`. Gemini and the OpenAI-compatible API have a 20 second timeout. The router tries the next provider only if the first one fails before the first token. If the cut happens mid-sentence, retrying would duplicate the start of the answer.
+The interface is `complete` and `stream`. `LLM_PROVIDER` is one of `fake`, `gemini`, `openai`, or `local`.
 
-There is no embedding fallback. Falling through to the fake embedder would leave vectors from another space in the same index.
+`fake` quotes the retrieved sentences and builds the summary in code. It is the default when Compose has no `.env`. It is not a fallback for any of the other three.
+
+`gemini` calls Gemini. The default chat model is `gemini-3.5-flash`. Embeddings, when `EMBEDDING_PROVIDER=gemini`, use `gemini-embedding-001` at 384 dimensions. The chat timeout is 20 seconds.
+
+`openai` calls an OpenAI-compatible chat-completions endpoint. The default is `https://api.openai.com/v1` and `gpt-4o-mini`, with `OPENAI_API_KEY` required. The timeout is 20 seconds. JSON summaries request `response_format: json_object`.
+
+`local` is that same chat-completions client pointed at a server on this machine, such as LM Studio Bionic. Compose reaches it through `host.docker.internal` and the port shown in the server's base URL, not through `localhost`. `LOCAL_LLM_MODEL` is required. No API key is required. JSON mode is not sent, because small local models often reject it. The timeout is 180 seconds so the first request can load the weights. A statement object inside a contradiction is flattened to the string the summary schema requires.
+
+The router tries `LLM_FALLBACK` only when the first real provider fails before the first token. A mid-sentence failure is shown as an error, because a retry would repeat the opening. Embeddings do not fall back. Switching `EMBEDDING_PROVIDER` means deleting the `pgdata` volume and uploading again. Switching only `LLM_PROVIDER` does not.
 
 ## Traces, retention, and masking
 

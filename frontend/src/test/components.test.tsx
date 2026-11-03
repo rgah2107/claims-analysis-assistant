@@ -3,7 +3,7 @@
  * click reveals the fragment that grounded the answer.
  */
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ChatPanel } from "../components/ChatPanel";
 import { DocumentList } from "../components/DocumentList";
@@ -74,5 +74,54 @@ describe("ChatPanel", () => {
     screen.getByRole("button", { name: /View excerpt/ }).click();
     expect(await screen.findByText(/2000 EUR per claim/)).toBeInTheDocument();
     expect(screen.getByText("CLAUSE 4. Water damage")).toBeInTheDocument();
+  });
+
+  it("renders bold and bullet marks instead of showing the asterisks", () => {
+    render(
+      <ChatPanel
+        turns={[
+          {
+            ...turn,
+            text: "The later document prevails.\n\n* **the policy**: 2000 EUR",
+          },
+        ]}
+        question=""
+        asking={false}
+        onQuestion={() => undefined}
+        onAsk={() => undefined}
+        onFeedback={() => undefined}
+      />,
+    );
+    expect(screen.getByText("the policy").tagName).toBe("STRONG");
+    expect(screen.queryByText(/\*\*/)).not.toBeInTheDocument();
+  });
+
+  it("shows a spinner where the summary table will appear", () => {
+    cleanup();
+    const { rerender } = render(
+      <ChatPanel
+        turns={[{ ...turn, text: "The policy number is POL-NS-2024-1187.", summary: null, outcome: "pending" }]}
+        question=""
+        asking
+        onQuestion={() => undefined}
+        onAsk={() => undefined}
+        onFeedback={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Preparing the summary…");
+    expect(screen.queryByText("Policy")).not.toBeInTheDocument();
+
+    rerender(
+      <ChatPanel
+        turns={[turn]}
+        question=""
+        asking={false}
+        onQuestion={() => undefined}
+        onAsk={() => undefined}
+        onFeedback={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByText("Policy")).toBeInTheDocument();
   });
 });

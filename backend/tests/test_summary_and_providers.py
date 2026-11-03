@@ -56,6 +56,14 @@ def test_invalid_json_is_repaired_once() -> None:
     assert summary.confidence == "low"
 
 
+def test_a_provider_failure_is_not_called_a_schema_error() -> None:
+    """Gemini being down is not invalid JSON. The caller must say the provider failed."""
+    router = LLMRouter([Scripted([], fail_before_text=True)])
+    summary, status = summarize(router, "What is the policy", [])
+    assert summary is None
+    assert status == "provider_error"
+
+
 def test_two_invalid_payloads_become_schema_error() -> None:
     """After the repair attempt the caller must not pretend there is a summary."""
     router = LLMRouter([Scripted(['{"confidence": "nope"}', '{"confidence": "still-nope"}'])])
@@ -77,6 +85,37 @@ def test_markdown_fence_around_json_is_accepted() -> None:
     """Models often wrap JSON in fences. The parser strips one pair."""
     parsed = parse_json_object('```json\n{"confidence": "low"}\n```')
     assert parsed["confidence"] == "low"
+
+
+def test_nested_contradiction_statements_become_strings() -> None:
+    """Gemma wraps each statement as an object. The card expects strings."""
+    raw = json.dumps(
+        {
+            "policy_number": "POL-NS-2024-1187",
+            "dates": ["2024-03-01"],
+            "applicable_coverage": "water damage",
+            "confidence": "medium",
+            "contradictions": [
+                {
+                    "topic": "indemnity limit for water damage",
+                    "statements": [
+                        {
+                            "content": "The indemnity limit for water damage is 2000 EUR per claim.",
+                            "citation_chunk_ids": ["chunk-a"],
+                        },
+                        {
+                            "content": "The indemnity limit for water damage is changed to 5000 EUR per claim.",
+                            "citation_chunk_ids": ["chunk-b"],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    summary = ClaimSummary.model_validate(parse_json_object(raw))
+    contradiction = summary.contradictions[0]
+    assert contradiction.statements[0].startswith("The indemnity limit")
+    assert contradiction.citation_chunk_ids == ["chunk-a", "chunk-b"]
 
 
 def test_router_falls_back_only_before_the_first_token() -> None:
@@ -147,6 +186,25 @@ def test_gemini_3_8_request_skips_thoughts_and_does_not_send_temperature() -> No
         }
     )
     assert _gemini_text(raw) == "POL-NS-2024-1187"
+
+
+def test_local_provider_does_not_require_a_key_or_json_mode() -> None:
+    """Bionic speaks chat completions and often rejects response_format."""
+    from app.config import Settings
+    from app.providers import _build_provider
+
+    settings = Settings(
+        local_llm_model="gemma-3-12b-it",
+        local_llm_base_url="http://host.docker.internal:1235/v1",
+        local_llm_api_key="",
+    )
+    provider = _build_provider("local", settings)
+    payload = provider._payload("What is the limit?", stream=False, as_json=True)
+    assert provider.name == "local"
+    assert payload["model"] == "gemma-3-12b-it"
+    assert "response_format" not in payload
+    assert provider._headers() == {}
+    assert provider._timeout == 180.0
 
 
 def _valid() -> dict:

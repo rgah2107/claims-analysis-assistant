@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.db import session_scope
 from app.embeddings import get_embedding_provider
 from app.errors import ProviderError
+from app.grounding import blocks_from_hits, summary_payload
 from app.models import Answer, Claim, Feedback
 from app.observability import get_logger, record_llm_usage, start_span
 from app.prompts import build_answer_prompt
@@ -114,8 +115,8 @@ def stream_answer(claim_number: str, question: str) -> Iterator[str]:
                 pieces.append(piece)
                 yield _sse("token", {"text": piece})
             record_llm_usage(span, router.last_provider, prompt, "".join(pieces))
-    except ProviderError:
-        logger.info("llm provider failed for answer %s", answer_id)
+    except ProviderError as exc:
+        logger.info("llm provider failed for answer %s: %s", answer_id, exc)
         _save(answer_id, outcome="provider_error", text="".join(pieces), hits=hits, summary=None)
         yield _sse("error", {"message": PROVIDER_MESSAGE, "answer_id": answer_id})
         yield _sse("done", {"answer_id": answer_id, "outcome": "provider_error"})
@@ -126,6 +127,13 @@ def stream_answer(claim_number: str, question: str) -> Iterator[str]:
         summary, status = summarize(router, question, hits)
         record_llm_usage(span, router.last_provider, prompt, answer_text)
         span.set_attribute("summary.status", status)
+    if summary is None and status == "provider_error":
+        # The prose already streamed. Fill the card from the same chunks
+        # instead of showing a provider error for a second call that failed.
+        summary = ClaimSummary.model_validate(
+            summary_payload(question, blocks_from_hits(hits), abstained=False)
+        )
+        status = "from_documents"
     if summary is None:
         _save(answer_id, outcome="schema_error", text=answer_text, hits=hits, summary=None)
         yield _sse("schema_error", {"message": SCHEMA_MESSAGE, "answer_id": answer_id})

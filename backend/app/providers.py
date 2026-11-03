@@ -141,27 +141,47 @@ class GeminiLLM:
 
 
 class OpenAICompatibleLLM:
-    """Chat completions against OpenAI or any server that speaks the same API."""
+    """Chat completions against OpenAI or any server that speaks the same API.
+
+    ``local`` is the same protocol pointed at LM Studio Bionic. That server
+    does not require a key and often rejects JSON mode, so those are optional.
+    """
 
     name = "openai"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        name: str = "openai",
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        json_mode: bool = True,
+        timeout: float | None = None,
+    ) -> None:
+        self.name = name
         self._settings = settings
+        self._base_url = (base_url or settings.openai_base_url).rstrip("/")
+        self._model = model or settings.openai_chat_model
+        self._api_key = settings.openai_api_key if api_key is None else api_key
+        self._json_mode = json_mode
+        self._timeout = timeout if timeout is not None else settings.llm_timeout_seconds
 
     def complete(self, prompt: str, *, as_json: bool = False) -> str:
         """Non-streaming chat completion."""
         payload = self._payload(prompt, stream=False, as_json=as_json)
         try:
             response = httpx.post(
-                f"{self._settings.openai_base_url.rstrip('/')}/chat/completions",
+                f"{self._base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,
-                timeout=self._settings.llm_timeout_seconds,
+                timeout=self._timeout,
             )
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ProviderError(f"OpenAI failed: {exc}") from exc
+            raise ProviderError(f"{self.name} failed: {exc}") from exc
 
     def stream(self, prompt: str) -> Iterator[str]:
         """Yield content deltas. ``[DONE]`` ends the stream."""
@@ -169,10 +189,10 @@ class OpenAICompatibleLLM:
         try:
             with httpx.stream(
                 "POST",
-                f"{self._settings.openai_base_url.rstrip('/')}/chat/completions",
+                f"{self._base_url}/chat/completions",
                 headers=self._headers(),
                 json=payload,
-                timeout=httpx.Timeout(self._settings.llm_timeout_seconds),
+                timeout=httpx.Timeout(self._timeout),
             ) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
@@ -185,23 +205,25 @@ class OpenAICompatibleLLM:
                     if piece:
                         yield piece
         except httpx.HTTPError as exc:
-            raise ProviderError(f"OpenAI failed: {exc}") from exc
+            raise ProviderError(f"{self.name} failed: {exc}") from exc
 
     def _payload(self, prompt: str, *, stream: bool, as_json: bool) -> dict:
         payload: dict = {
-            "model": self._settings.openai_chat_model,
+            "model": self._model,
             "temperature": 0,
             "stream": stream,
             "messages": [{"role": "user", "content": prompt}],
         }
-        if as_json:
+        if as_json and self._json_mode:
             payload["response_format"] = {"type": "json_object"}
         return payload
 
     def _headers(self) -> dict[str, str]:
-        if not self._settings.openai_api_key:
-            raise ProviderError("OPENAI_API_KEY is empty.")
-        return {"Authorization": f"Bearer {self._settings.openai_api_key}"}
+        if not self._api_key:
+            if self.name == "openai":
+                raise ProviderError("OPENAI_API_KEY is empty.")
+            return {}
+        return {"Authorization": f"Bearer {self._api_key}"}
 
 
 class LLMRouter:
@@ -266,15 +288,29 @@ def _build_provider(name: str, settings: Settings) -> LLMProvider:
         return GeminiLLM(settings)
     if name == "openai":
         return OpenAICompatibleLLM(settings)
+    if name == "local":
+        if not settings.local_llm_model.strip():
+            raise ProviderError(
+                "LOCAL_LLM_MODEL is empty. Use the model identifier shown in Bionic."
+            )
+        return OpenAICompatibleLLM(
+            settings,
+            name="local",
+            base_url=settings.local_llm_base_url,
+            model=settings.local_llm_model,
+            api_key=settings.local_llm_api_key,
+            json_mode=False,
+            timeout=settings.local_llm_timeout_seconds,
+        )
     raise ProviderError(f"Unknown language provider: {name}")
 
 
 def _gemini_generation(*, as_json: bool) -> dict[str, object]:
-    """Request shape for ``gemini-3.8-flash``.
+    """Request shape for current Gemini flash models.
 
-    That model ignores ``temperature`` and a later release will reject it.
-    ``thinkingLevel`` ``low`` is the supported fast setting. ``minimal`` is an
-    error on this model. JSON mode is only for the summary call.
+    3.8 Flash ignores ``temperature`` and a later release will reject it, so
+    this request never sends it. ``thinkingLevel`` ``low`` is accepted by
+    3.5 and 3.8. ``minimal`` is an error. JSON mode is only for the summary call.
     """
     generation: dict[str, object] = {"thinkingConfig": {"thinkingLevel": "low"}}
     if as_json:

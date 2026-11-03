@@ -36,20 +36,27 @@ def empty_summary(question: str, hits: list[RetrievedChunk]) -> ClaimSummary:
 
 
 def summarize(router: LLMRouter, question: str, hits: list[RetrievedChunk]) -> tuple[ClaimSummary | None, str]:
-    """Return ``(summary, status)`` where status is ok, repaired, or schema_error."""
+    """Return ``(summary, status)``.
+
+    Status is ``ok``, ``repaired``, ``schema_error``, or ``provider_error``.
+    A provider failure is not a validation failure: the JSON was never received.
+    """
     prompt = build_summary_prompt(question, hits)
     try:
         first = router.complete(prompt, as_json=True)
     except ProviderError:
-        return None, "schema_error"
+        return None, "provider_error"
     try:
         return _validate(first, question), "ok"
     except (ValidationError, ValueError) as first_error:
         repair = build_repair_prompt(prompt, first, str(first_error))
         try:
             second = router.complete(repair, as_json=True)
+        except ProviderError:
+            return None, "provider_error"
+        try:
             return _validate(second, question), "repaired"
-        except (ProviderError, ValidationError, ValueError):
+        except (ValidationError, ValueError):
             return None, "schema_error"
 
 
@@ -63,7 +70,58 @@ def parse_json_object(raw: str) -> dict:
     parsed = json.loads(cleaned[start : end + 1])
     if not isinstance(parsed, dict):
         raise ValueError("the model returned JSON that is not an object")
-    return parsed
+    return _flatten_contradiction_statements(parsed)
+
+
+def _flatten_contradiction_statements(payload: dict) -> dict:
+    """Turn nested statement objects into the strings ClaimSummary requires.
+
+    Some models put each statement in ``{content, citation_chunk_ids}``.
+    The contract is a string list, with the chunk ids on the contradiction.
+    """
+    rows = payload.get("contradictions")
+    if not isinstance(rows, list):
+        return payload
+    return {**payload, "contradictions": [_flatten_contradiction(row) for row in rows]}
+
+
+def _flatten_contradiction(row: object) -> object:
+    if not isinstance(row, dict):
+        return row
+    statements = row.get("statements")
+    if not isinstance(statements, list) or not any(isinstance(item, dict) for item in statements):
+        return row
+    texts: list[str] = []
+    citations = _string_list(row.get("citation_chunk_ids"))
+    for item in statements:
+        if isinstance(item, str):
+            texts.append(item)
+            continue
+        if not isinstance(item, dict):
+            raise ValueError("a contradiction statement must be a string")
+        content = item.get("content") or item.get("statement") or item.get("text")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("a contradiction statement must be a string")
+        texts.append(content)
+        citations.extend(_string_list(item.get("citation_chunk_ids")))
+    return {**row, "statements": texts, "citation_chunk_ids": _unique(citations)}
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
 
 
 def _validate(raw: str, question: str) -> ClaimSummary:

@@ -40,6 +40,8 @@ def build_summary_prompt(question: str, hits: list[RetrievedChunk]) -> str:
         "policy_number (string or null), dates (array of strings), "
         "applicable_coverage (string or null), confidence (low, medium, or high), "
         "contradictions (array of {topic, statements, citation_chunk_ids}).\n"
+        "Each statement is a plain string. citation_chunk_ids is an array of chunk id strings "
+        "on the contradiction, not inside each statement.\n"
         "statements must contain at least two items when a contradiction is present.\n"
         "Use null and low confidence when a field is not in the documents.\n"
         "Do not invent a policy number.\n\n"

@@ -4,7 +4,7 @@
  * event, so it still matches the answer after a newer version of the file is uploaded.
  */
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ChatTurn, Citation } from "../types";
 
 export function ChatPanel({
@@ -33,12 +33,18 @@ export function ChatPanel({
         {turns.map((turn, index) => (
           <article key={turn.answerId ?? `pending-${index}`} className="turn">
             <h3>{turn.question}</h3>
-            <p className="answer-text">{turn.text || (asking ? "Searching the evidence…" : "")}</p>
+            <FormattedAnswer text={turn.text || (asking ? "Searching the evidence…" : "")} />
             {turn.outcome === "insufficient_evidence" ? (
               <p className="banner">Not enough evidence. No answer was invented.</p>
             ) : null}
             {turn.outcome === "schema_error" || turn.outcome === "provider_error" ? (
               <p className="error-text">{turn.error}</p>
+            ) : null}
+            {asking && turn.outcome === "pending" && turn.text.length > 0 && !turn.summary ? (
+              <p className="summary-pending" role="status">
+                <span className="spinner" aria-hidden="true" />
+                Preparing the summary…
+              </p>
             ) : null}
             {turn.summary && turn.summary.contradictions.length > 0 ? (
               <div className="banner warning">
@@ -141,4 +147,74 @@ export function ChatPanel({
       </form>
     </section>
   );
+}
+
+/** Render the few Markdown marks Gemini actually emits. Text stays text, so a file cannot inject HTML. */
+function FormattedAnswer({ text }: { text: string }) {
+  return (
+    <div className="answer-text">
+      {answerBlocks(text).map((block, index) =>
+        block.kind === "list" ? (
+          <ul key={index}>
+            {block.items.map((item, itemIndex) => (
+              <li key={itemIndex}>{renderInline(item)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p key={index}>{renderInline(block.text)}</p>
+        ),
+      )}
+    </div>
+  );
+}
+
+type AnswerBlock = { kind: "p"; text: string } | { kind: "list"; items: string[] };
+
+function answerBlocks(text: string): AnswerBlock[] {
+  const blocks: AnswerBlock[] = [];
+  let items: string[] | null = null;
+  const flush = () => {
+    if (items) {
+      blocks.push({ kind: "list", items });
+      items = null;
+    }
+  };
+  for (const line of text.split("\n")) {
+    const bullet = line.match(/^\s*[*•-]\s+(.*)$/);
+    if (bullet) {
+      items = items ?? [];
+      items.push(bullet[1]);
+      continue;
+    }
+    flush();
+    if (line.trim()) {
+      blocks.push({ kind: "p", text: line });
+    }
+  }
+  flush();
+  return blocks;
+}
+
+function renderInline(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`/g;
+  let cursor = 0;
+  let key = 0;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) {
+      nodes.push(text.slice(cursor, index));
+    }
+    if (match[1] !== undefined) {
+      nodes.push(<strong key={key}>{match[1]}</strong>);
+    } else {
+      nodes.push(<code key={key}>{match[2]}</code>);
+    }
+    key += 1;
+    cursor = index + match[0].length;
+  }
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor));
+  }
+  return nodes;
 }

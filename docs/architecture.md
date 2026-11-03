@@ -19,6 +19,7 @@ flowchart LR
   Redis --> Worker
   Worker -->|extract, chunk, embed| PG
   API -->|hybrid: vector + text| PG
+  API -->|chat: fake, Gemini, OpenAI, or local| LLM[Language provider]
   API -->|trace| OTEL[OpenTelemetry]
   Worker -->|trace| OTEL
 ```
@@ -37,7 +38,18 @@ flowchart LR
 2. Top 20 by cosine and top 20 by English `tsvector`, filtered by `claim_id` and `active`.
 3. Reciprocal Rank Fusion with k = 60.
 4. If the top result does not share content words with the question, the answer is a refusal. The model is not called.
-5. If there is evidence, citations go out over SSE before the text. The summary is then validated with Pydantic, with a single repair attempt.
+5. If there is evidence, citations go out over SSE before the text. The summary is then validated with Pydantic, with a single repair attempt. The chat shows "Preparing the summary…" from the first answer token until that card arrives.
+
+## Language providers
+
+Chat and embeddings are chosen separately.
+
+| Setting | Values |
+| --- | --- |
+| `LLM_PROVIDER` | `fake`, `gemini`, `openai`, `local` |
+| `EMBEDDING_PROVIDER` | `fake`, `gemini` |
+
+`fake` is deterministic and needs no key. `gemini` calls Gemini. `openai` calls `api.openai.com`. `local` calls an OpenAI-compatible server on the host, reached from Compose at `host.docker.internal`. Gemini and OpenAI time out at 20 seconds. The local server times out at 180 seconds. `LLM_FALLBACK` may name a second real chat provider, and only before the first token. It is never `fake`. Embeddings have no fallback: a different embedding model means a new volume and a new upload. The column is 384 dimensions.
 
 ## Traces
 
