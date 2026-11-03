@@ -365,5 +365,6 @@ def _contradiction_matches(question: str, topic: str) -> bool:
     if "deductible" in topic_tokens:
         return bool(tokens & {"deductible"})
     if topic_tokens & {"limit", "indemnity"}:
-        return bool(tokens & {"limit", "indemnity", "water", "coverage"})
+        # "water" alone is not enough. The deductible question also says water.
+        return bool(tokens & {"limit", "indemnity"})
     return bool(tokens & topic_tokens)

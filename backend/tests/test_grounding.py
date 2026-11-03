@@ -105,6 +105,35 @@ def test_the_original_limit_is_not_the_same_answer_as_the_current_limit() -> Non
     )
 
 
+def test_the_deductible_question_does_not_inherit_the_limit_conflict() -> None:
+    """150 EUR is the answer. The 2000/5000 disagreement is a different clause."""
+    blocks = [
+        SourceBlock(
+            "c1",
+            "home-policy.pdf",
+            "2024-03-01",
+            "The indemnity limit for water damage is 2000 EUR per claim. "
+            "The deductible for water damage is 150 EUR.",
+        ),
+        SourceBlock(
+            "c2",
+            "endorsement-clause-4.docx",
+            "2024-06-15",
+            "The indemnity limit for water damage is changed to 5000 EUR per claim. "
+            "The deductible does not change.",
+        ),
+    ]
+    question = "What is the deductible for water damage"
+    answer = extractive_answer(question, blocks)
+    payload = summary_payload(question, blocks, abstained=False)
+    assert answer.startswith("The deductible for water damage is 150 EUR")
+    assert "2000" not in answer and "5000" not in answer
+    assert "prevails" not in answer
+    assert payload["contradictions"] == []
+    assert payload["confidence"] == "high"
+    assert "150 EUR" in (payload["applicable_coverage"] or "")
+
+
 def test_an_unrelated_question_does_not_surface_the_limit_conflict() -> None:
     """The 2000/5000 disagreement is not about who is insured."""
     blocks = [
